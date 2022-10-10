@@ -41,6 +41,17 @@
                 height: 100%;
             }
 
+            #text {
+                position: absolute;
+                z-index: 1;
+                right: 20px;
+                bottom: 20px;
+                width: 268px;
+                height: 60px;
+                background-color: white;
+                image-rendering: pixelated;
+            }
+
         </style>
     </head>
 
@@ -58,23 +69,21 @@
             <button id="torus">Torus</button>
             <button id="terrain">Terrain</button>
             <button id="hand">Hand</button>
+            <button id="hello">Hello</button>
             <button id="spin">Spin</button>
         </div>
+        <canvas id="canvas"></canvas>
+        <canvas id="text"></canvas>
         <script>
-
             var scene = new THREE.Scene();
             var camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
-            var renderer = new THREE.WebGLRenderer();
-
-            // scene.background = new THREE.Color( 0xfafafa );
-
+            var renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas') });
             var center = new THREE.Vector3(0, 0, 0),
                 camera1 = new THREE.Vector3(100, 100, 100),
-                camera2 = new THREE.Vector3(100, -100, -100);
-            camera3 = new THREE.Vector3(-100, -100, -100);
+                camera2 = new THREE.Vector3(100, -100, -100),
+                camera3 = new THREE.Vector3(-100, -100, -100);
 
             renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableZoom = true;
@@ -84,7 +93,7 @@
             camera.position.z = 250;
             camera.lookAt(center);
 
-            var ambientLight = new THREE.AmbientLight(0x000000);
+            var ambientLight = new THREE.AmbientLight(0x333333);
             scene.add(ambientLight);
 
             var lights = [];
@@ -167,13 +176,77 @@
                 return vertices;
             }
 
+            function fitTextOnCanvas(context, text, fontface, width) {
+                // start with a large font size
+                var fontsize = 100,
+                    height;
+
+                // lower the font size until the text fits the canvas
+                do {
+                    fontsize--;
+                    context.font = fontsize + "px " + fontface;
+                } while (context.measureText(text).width > width)
+
+                height = context.measureText(text).width;
+
+                // draw the text
+                context.fillText(text, 0, fontsize / 1.25);
+
+                // alert("A fontsize of "+fontsize+"px fits this text on the canvas");
+
+                return { fontsize: fontsize, height: height };
+            }
+
+            var createText = function (text, resolutionX, resolutionY, width, depth) {
+                // Create the text in the #text canvas
+                var canvas = document.getElementById('text'),
+                    ctx = canvas.getContext('2d'),
+                    bmp;
+
+                canvas.width = resolutionX;
+                canvas.height = resolutionY;
+
+                fitTextOnCanvas(ctx, text, 'effra-bold', resolutionX);
+
+                bmp = ctx.getImageData(0, 0, resolutionX, resolutionY);
+                console.log(bmp);
+
+                var i = 0
+                heights = generateHeight(resolutionX, resolutionY),
+                    vertices = [];
+
+                for (var y = 0; y < resolutionY; y++) {
+                    for (var x = 0; x < resolutionX; x++) {
+                        // Get the RGB values for this pixel in the imageData
+                        var alpha = bmp.data[i * 4 + 3];
+
+                        vertices.push({
+                            x: mapRange(x, 0, resolutionX, -(width / 2), (width / 2)),
+                            y: alpha / 255 + 0.001,
+                            z: mapRange(y, 0, resolutionY, -(depth / 2), (depth / 2)),
+                        });
+                        i++;
+                    }
+                }
+
+                console.log(vertices);
+
+                return vertices;
+            }
+
+            var getBrightness = function (color) {
+                // (R+R+B+G+G+G)/6
+                return (color[0] + color[0] + color[1] + color[2] + color[2] + color[2]) / 6;
+            }
+
             var cubeGrid = createCubeGrid(10, 10, 10, 10),
                 positions = {
                     'cube': cubeGrid,
                     'random': randomizeCubeGrid(cubeGrid, 10),
                     'sphere': createSphere(),
                     'torus': createTorus(),
-                    'terrain': createTerrain(32, 32, 350, 350)
+                    'terrain': createTerrain(32, 32, 350, 350),
+                    'text': createText('SIMPLE', 67, 15, 500, 100)
                 };
 
             var loader = new THREE.OBJLoader();
@@ -208,24 +281,8 @@
 
                 TWEEN.update();
 
-                // cubes.forEach(function (cube) {
-                //     cube.rotation.x += 0.01;
-                //     cube.rotation.y += 0.01;
-                //     cube.rotation.z += 0.01;
-                // });
-
                 renderer.render(scene, camera);
             }
-
-            // window.setInterval(function () {
-            //     positions.terrain = createTerrain(32, 32, 350, 350);
-            //     cubes.forEach(function (cube, i) {
-            //         var tween = new TWEEN.Tween(cube.position)
-            //                              .to(positions.terrain[i], 1500)
-            //                              .easing(TWEEN.Easing.Cubic.InOut).
-            //                              start();
-            //     });
-            // }, 3500);
 
             render();
 
@@ -339,6 +396,27 @@
                         .to(positions.terrain[i], 5000)
                         .easing(TWEEN.Easing.Elastic.Out).
                         start();
+                    var tweenScale = new TWEEN.Tween(cube.scale)
+                        .to(new THREE.Vector3(1, 1, 1), 1000)
+                        .easing(TWEEN.Easing.Cubic.Out)
+                        .start();
+                });
+            });
+
+            document.getElementById('hello').addEventListener('click', function () {
+                TWEEN.removeAll();
+                cubes.forEach(function (cube, i) {
+                    var tween = new TWEEN.Tween(cube.position)
+                        .to(positions.text[i], 1000)
+                        .easing(TWEEN.Easing.Elastic.Out)
+                        .start();
+
+                    var y = positions.text[i].y,
+                        scale = new THREE.Vector3(y, y, y),
+                        tweenScale = new TWEEN.Tween(cube.scale)
+                            .to(scale, 1000)
+                            .easing(TWEEN.Easing.Cubic.Out)
+                            .start();
                 });
             });
 
@@ -366,23 +444,6 @@
             function mapRange(value, low1, high1, low2, high2) {
                 return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
             }
-
-            // var worldWidth = 256,
-            //     worldDepth = 256,
-            //     worldHalfWidth = worldWidth / 2,
-            //     worldHalfDepth = worldDepth / 2,
-            //     data = generateHeight( worldWidth, worldDepth );
-
-            // texture = new THREE.CanvasTexture( generateTexture( data, worldWidth, worldDepth ) );
-            // texture.wrapS = THREE.ClampToEdgeWrapping;
-            // texture.wrapT = THREE.ClampToEdgeWrapping;
-
-            // var geometry = new THREE.PlaneBufferGeometry( 7500, 7500, worldWidth - 1, worldDepth - 1 );
-            // geometry.rotateX( - Math.PI / 2 );
-
-            // mesh = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { map: texture } ) );
-            // scene.add( mesh );
-
 
             function generateHeight(width, height) {
 
